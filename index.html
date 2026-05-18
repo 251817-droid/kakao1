@@ -1,29 +1,190 @@
-// showPopup 함수 부분을 이렇게 수정해봐!
-function showPopup(marker, place) {
-    if (customOverlay) customOverlay.setMap(null);
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>편의점 고! - 역 주변 탐색</title>
+    <style>
+        /* 편의점 느낌의 귀여운 테마색 설정 */
+        :root {
+            --main-color: #00b894; /* 편의점 민트 */
+            --point-color: #ffeaa7; /* 따뜻한 도시락 노랑 */
+            --bg-color: #f0f3f1;
+        }
 
-    let stockLink = "";
-    // 브랜드별 재고 확인 경로 안내 (예시)
-    if (place.place_name.includes("CU")) {
-        stockLink = "포켓CU 앱에서 재고 확인 가능";
-    } else if (place.place_name.includes("GS25")) {
-        stockLink = "우리동네GS 앱에서 재고 확인 가능";
-    } else {
-        stockLink = "편의점 앱을 확인해주세요";
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { width: 100%; height: 100%; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; background-color: var(--bg-color); }
+        
+        #container { display: flex; width: 100%; height: 100vh; }
+
+        /* 사이드바: 귀여운 스타일 */
+        #menu_wrap {
+            width: 360px; height: 100%; padding: 20px;
+            background: white; overflow-y: auto;
+            border-right: 4px solid var(--main-color); z-index: 10;
+        }
+
+        .title { color: var(--main-color); font-size: 1.5rem; font-weight: 800; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; }
+        
+        .search_box { margin-bottom: 20px; background: var(--point-color); padding: 15px; border-radius: 15px; }
+        .search_box input { width: 70%; padding: 10px; border: none; border-radius: 8px; font-size: 0.9rem; }
+        .search_box button { width: 25%; padding: 10px; background: var(--main-color); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+
+        /* 리스트 스타일 */
+        #placesList { list-style: none; }
+        .place_item { 
+            padding: 15px; background: #fff; margin-bottom: 12px; 
+            border-radius: 12px; border: 2px solid #eee; transition: 0.3s;
+        }
+        .place_item:hover { border-color: var(--main-color); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        
+        .direction_tag { 
+            display: inline-block; padding: 2px 8px; background: var(--main-color); 
+            color: white; border-radius: 20px; font-size: 0.75rem; margin-bottom: 5px; 
+        }
+        .place_name { font-weight: bold; font-size: 1.1rem; color: #2d3436; display: block; }
+        .stock_info { font-size: 0.85rem; margin-top: 5px; color: #636e72; }
+        .is_stock { color: #d63031; font-weight: bold; }
+
+        /* 지도 및 팝업 */
+        #map_wrap { flex: 1; position: relative; }
+        #map { width: 100%; height: 100%; }
+
+        .custom_info {
+            padding: 10px; background: white; border: 2px solid var(--main-color);
+            border-radius: 10px; font-size: 12px; line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="menu_wrap">
+        <div class="title">🏪 편의점 GO!</div>
+        <div class="search_box">
+            <form onsubmit="searchWithDirection(); return false;">
+                <input type="text" id="keyword" placeholder="예: 삼각김밥 강남역" autocomplete="off"> 
+                <button type="submit">검색</button> 
+            </form>
+        </div>
+        <ul id="placesList"></ul>
+    </div>
+    <div id="map_wrap">
+        <div id="map"></div>
+    </div>
+</div>
+
+<script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=58e708827c081bc298f9c53c8c4734ba&libraries=services"></script>
+
+<script>
+    let map;
+    let ps;
+    let markers = [];
+    let infowindow;
+
+    // 초기 지도 설정
+    const container = document.getElementById('map');
+    const options = {
+        center: new kakao.maps.LatLng(37.566826, 126.9786567),
+        level: 3
+    };
+    map = new kakao.maps.Map(container, options);
+    ps = new kakao.maps.services.Places();
+    infowindow = new kakao.maps.InfoWindow({zIndex:1});
+
+    function searchWithDirection() {
+        const keyword = document.getElementById('keyword').value;
+        if (!keyword.trim()) return alert('검색어를 입력해주세요!');
+        
+        // 검색어에 '편의점'이 없으면 붙여서 검색 품질 향상
+        const finalKeyword = keyword.includes('편의점') ? keyword : keyword + " 편의점";
+        ps.keywordSearch(finalKeyword, placesSearchCB);
     }
 
-    const content = `
-        <div class="custom_info">
-            <strong>${place.place_name}</strong><br>
-            <span style="color:#ff7675; font-size:11px;">🔍 ${stockLink}</span><br>
-            <a href="https://map.kakao.com/link/to/${place.id}" target="_blank" style="color:blue">🚩 길찾기</a>
-        </div>
-    `;
+    function placesSearchCB(data, status) {
+        if (status === kakao.maps.services.Status.OK) {
+            displayPlaces(data);
+        } else {
+            alert('결과가 없습니다!');
+        }
+    }
 
-    customOverlay = new kakao.maps.CustomOverlay({
-        content: content,
-        position: marker.getPosition(),
-        yAnchor: 1.3
-    });
-    customOverlay.setMap(map);
-}
+    // 좌표를 바탕으로 방향(동서남북) 계산하는 함수
+    function getDirection(center, target) {
+        const latDiff = target.getLat() - center.getLat(); // 위도 차이
+        const lngDiff = target.getLng() - center.getLng(); // 경도 차이
+
+        let direction = "";
+        if (latDiff > 0) direction += "북";
+        else if (latDiff < 0) direction += "남";
+
+        if (lngDiff > 0) direction += "동";
+        else if (lngDiff < 0) direction += "서";
+
+        return direction ? direction + "쪽" : "근처";
+    }
+
+    function displayPlaces(places) {
+        const listEl = document.getElementById('placesList');
+        const bounds = new kakao.maps.LatLngBounds();
+        removeMarkers();
+        listEl.innerHTML = '';
+
+        // 지도의 중심(역 기준 검색 시 검색된 범위의 중심)을 기준으로 방향 계산
+        const mapCenter = map.getCenter();
+
+        places.forEach((place, i) => {
+            const position = new kakao.maps.LatLng(place.y, place.x);
+            const direction = getDirection(mapCenter, position); // 방향 계산
+            
+            // 마커 생성
+            const marker = new kakao.maps.Marker({ position: position, map: map });
+            markers.push(marker);
+            bounds.extend(position);
+
+            // 리스트 아이템 구성
+            const itemEl = document.createElement('li');
+            itemEl.className = 'place_item';
+            
+            // 랜덤 재고 정보 (UI용)
+            const stockStatus = Math.random() > 0.5 ? '<span class="is_stock">재고 있음</span>' : '재고 확인중';
+
+            itemEl.innerHTML = `
+                <span class="direction_tag">${direction}</span>
+                <span class="place_name">${place.place_name}</span>
+                <div class="stock_info">
+                    현재 상태: ${stockStatus}<br>
+                    📞 ${place.phone || '번호 없음'}
+                </div>
+            `;
+
+            // 이벤트: 클릭 시 지도 이동 및 팝업
+            const clickAction = () => {
+                map.panTo(position);
+                const content = `
+                    <div class="custom_info">
+                        <strong>${place.place_name}</strong><br>
+                        <a href="https://map.kakao.com/link/to/${place.id}" target="_blank" style="color:blue">🚩 길찾기 시작</a>
+                    </div>`;
+                infowindow.setContent(content);
+                infowindow.open(map, marker);
+            };
+
+            itemEl.onclick = clickAction;
+            kakao.maps.event.addListener(marker, 'click', clickAction);
+
+            listEl.appendChild(itemEl);
+        });
+
+        map.setBounds(bounds);
+    }
+
+    function removeMarkers() {
+        markers.forEach(m => m.setMap(null));
+        markers = [];
+        infowindow.close();
+    }
+</script>
+
+</body>
+</html>
